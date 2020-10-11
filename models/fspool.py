@@ -1,4 +1,5 @@
 import tensorflow as tf
+from .layers.tf_torch_gather import torch_gather
 K = tf.keras.backend
 
 
@@ -64,18 +65,19 @@ class FSPool(tf.keras.layers.Layer):
         """
         # share same sequence length within each sample, so copy weighht across batch dim
         weight = tf.expand_dims(self.weight, axis=0)
+        weight = tf.broadcast_to(weight, [sizes.shape[0], weight.shape[1], weight.shape[2]])  # [2,2,21]
 
         # linspace [0, 1] -> linspace [0, n_pieces]
         index = self.n_pieces * sizes
         index = tf.expand_dims(index, axis=1)
+        index = tf.broadcast_to(index, [index.shape[0], weight.shape[1], index.shape[2]])  # [2,2,3]
 
         # points in the weight vector to the left and right
         idx = tf.cast(index, dtype=tf.int64)
         frac = index - tf.floor(index)
-        left = weight.gather(2, idx)
-        tf.gather_nd(weight, )
-
-        right = weight.gather(2, (idx + 1).clamp(max=self.n_pieces))
+        left = torch_gather(weight, idx)
+        right = torch_gather(weight,
+                             tf.clip_by_value((idx + 1), clip_value_min=tf.int64.min, clip_value_max=self.n_pieces))
 
         # interpolate between left and right point
         return (1 - frac) * left + frac * right
@@ -98,8 +100,10 @@ def fill_sizes(sizes, x=None):
     size_tensor = K.arange(start=0, stop=max_size, dtype=tf.float32)
 
     expanded = tf.expand_dims(size_tensor, axis=0)
-    total_sizes = tf.expand_dims(tf.clip_by_value((tf.cast(sizes, dtype=tf.float32) - 1), clip_value_min=1), axis=1)
-    size_tensor = tf.clip_by_value(tf.math.divide(expanded, total_sizes), clip_value_max=1)
+    total_sizes = tf.expand_dims(tf.clip_by_value((tf.cast(sizes, dtype=tf.float32) - 1),
+                                                  clip_value_min=1, clip_value_max=tf.float32.max), axis=1)
+    size_tensor = tf.clip_by_value(tf.math.divide(expanded, total_sizes),
+                                   clip_value_min=tf.float32.min, clip_value_max=1)
 
     mask = size_tensor <= 1
     mask = tf.cast(tf.expand_dims(mask, axis=1), dtype=tf.float32)

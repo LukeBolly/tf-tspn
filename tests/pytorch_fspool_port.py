@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import tensorflow as tf
+from models import fspool
+K = tf.keras.backend
 
 
 class FSPool(nn.Module):
@@ -13,7 +16,7 @@ class FSPool(nn.Module):
         https://github.com/Cyanogenoid/fspool
     """
 
-    def __init__(self, in_channels, n_pieces, relaxed=False):
+    def __init__(self, in_channels, n_pieces, relaxed=False, weight=None):
         """
         in_channels: Number of channels in input
         n_pieces: Number of pieces in piecewise linear
@@ -21,7 +24,10 @@ class FSPool(nn.Module):
         """
         super().__init__()
         self.n_pieces = n_pieces
-        self.weight = nn.Parameter(torch.zeros(in_channels, n_pieces + 1))
+        if weight is None:
+            self.weight = nn.Parameter(torch.zeros(in_channels, n_pieces + 1))
+        else:
+            self.weight = nn.Parameter(weight)
         self.relaxed = relaxed
 
         self.reset_parameters()
@@ -179,7 +185,27 @@ def cont_sort(x, perm=None, temp=1):
 
 
 if __name__ == "__main__":
-    pool = FSPool(3, 20)
-    set_data = torch.tensor([[[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[10, 11, 12], [13, 14, 15], [16, 17, 18]]])
-    out = pool(set_data)
-    print(out)
+    n_pieces = 20
+    set_data = [[[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[10, 11, 12], [13, 14, 15], [16, 17, 18]]]
+
+    # check the FSPool model has been correctly ported
+    pt_c1 = torch.arange(0, 1, 1.0 / (n_pieces + 1))
+    pt_c2 = torch.flip(torch.arange(0, 0.5, 0.5 / (n_pieces + 1)), [0])
+    pt_c3 = torch.arange(0, 0.5, 0.5 / (n_pieces + 1))
+    pt_weight = torch.stack([pt_c1, pt_c2, pt_c3]).float()
+
+    torch_pool = FSPool(3, 20, weight=pt_weight)
+    torch_set = torch.tensor(set_data)
+    torch_out = torch_pool(torch_set)
+    print(torch_out)
+
+    tf_c1 = K.arange(0, 1, 1.0 / (n_pieces + 1), dtype=tf.float32)
+    tf_c2 = tf.reverse(K.arange(0, 0.5, 0.5 / (n_pieces + 1), dtype=tf.float32), [0])
+    tf_c3 = K.arange(0, 0.5, 0.5 / (n_pieces + 1), dtype=tf.float32)
+    tf_weight = tf.stack([tf_c1, tf_c2, tf_c3])
+
+    tf_pool = fspool.FSPool(3, 20)
+    tf_pool.weight = tf_weight
+    tf_set = tf.Variable(set_data)
+    tf_out = tf_pool(tf_set)
+    print(tf_out)

@@ -80,14 +80,6 @@ def pytorch_piecewise_linear(weight, n_pieces, sizes):
     return (1 - frac) * left + frac * right
 
 if __name__ == '__main__':
-
-    tensor = [[[1, 2], [3, 4]],
-              [[5, 6], [7, 8]]]
-
-    indices = [[[1, 1], [0, 1]], [[1, 0], [0, 0]]]
-
-    res = torch_gather(tf.constant(tensor, dtype=tf.float32), tf.constant(indices, dtype=tf.int64))
-
     n_pieces = 20
     sizes_array = [[0, 0.5, 1], [0, 0.5, 1]]
 
