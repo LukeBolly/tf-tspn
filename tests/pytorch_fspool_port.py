@@ -30,11 +30,6 @@ class FSPool(nn.Module):
             self.weight = nn.Parameter(weight)
         self.relaxed = relaxed
 
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.normal_(self.weight)
-
     def forward(self, x, n=None):
         """ FSPool
 
@@ -196,8 +191,7 @@ if __name__ == "__main__":
 
     torch_pool = FSPool(3, 20, weight=pt_weight)
     torch_set = torch.tensor(set_data)
-    torch_out = torch_pool(torch_set)
-    print(torch_out)
+    torch_out, torch_perm = torch_pool(torch_set)
 
     tf_c1 = K.arange(0, 1, 1.0 / (n_pieces + 1), dtype=tf.float32)
     tf_c2 = tf.reverse(K.arange(0, 0.5, 0.5 / (n_pieces + 1), dtype=tf.float32), [0])
@@ -206,6 +200,13 @@ if __name__ == "__main__":
 
     tf_pool = fspool.FSPool(3, 20)
     tf_pool.weight = tf_weight
-    tf_set = tf.Variable(set_data)
-    tf_out = tf_pool(tf_set)
+    tf_set = tf.Variable(set_data, dtype=tf.float32)
+    tf_out, tf_perm = tf_pool(tf_set)
+
+    print("output")
+    print(torch_out)
     print(tf_out)
+
+    print("perm")
+    print(torch_perm)
+    print(tf_perm)

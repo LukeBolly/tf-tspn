@@ -23,7 +23,7 @@ class FSPool(tf.keras.layers.Layer):
     def build(self, input_shape):
         pass
 
-    def call(self, input, n=None):
+    def call(self, x, n=None):
         """ FSPool
         x: FloatTensor of shape (batch_size, in_channels, set size).
         This should contain the features of the elements in the set.
@@ -35,27 +35,28 @@ class FSPool(tf.keras.layers.Layer):
         n tensor must not be greater than the number of elements stored in the x tensor.
         Returns: pooled input x, used permutation matrix perm
         """
-        assert input.shape[1] == self.weight.shape[0], 'incorrect number of input channels in weight'
+        assert x.shape[1] == self.weight.shape[0], 'incorrect number of input channels in weight'
         # can call withtout length tensor, uses same length for all sets in the batch
         if n is None:
-            n = tf.cast(tf.fill(input.shape[0], input.shape[2]), dtype=tf.int64)
+            n = tf.cast(tf.fill(x.shape[0], x.shape[2]), dtype=tf.int64)
         # create tensor of ratios $r$
-        sizes, mask = fill_sizes(n, input)
-        mask = tf.broadcast_to(mask, input.shape)
+        sizes, mask = fill_sizes(n, x)
+        mask = tf.broadcast_to(mask, x.shape)
 
         # turn continuous into concrete weights
         weight = self.determine_weight(sizes)
 
         # make sure that fill value isn't affecting sort result
         # sort is descending, so put unreasonably low value in places to be masked away
-        input = input + tf.cast((1 - mask), tf.float32) * -99999
+        x = x + tf.cast((1 - mask), tf.float32) * -99999
         if self.relaxed:
-            input, perm = cont_sort(input, temp=self.relaxed)
+            sorted_x, perm = cont_sort(x, temp=self.relaxed)
         else:
-            input, perm = tf.sort(input, axis=2, direction="DESCENDING")
+            sorted_x = tf.sort(x, axis=2, direction="DESCENDING")
+            perm = tf.argsort(x, axis=2, direction="DESCENDING")
 
-        input = tf.math.reduce_sum(input * weight * tf.cast(mask, tf.float32), 2)
-        return input, perm
+        x = tf.math.reduce_sum(sorted_x * weight * tf.cast(mask, tf.float32), 2)
+        return x, perm
 
 
     def determine_weight(self, sizes):
@@ -75,9 +76,9 @@ class FSPool(tf.keras.layers.Layer):
         # points in the weight vector to the left and right
         idx = tf.cast(index, dtype=tf.int64)
         frac = index - tf.floor(index)
-        left = torch_gather(weight, idx)
+        left = torch_gather(weight, idx, 2)
         right = torch_gather(weight,
-                             tf.clip_by_value((idx + 1), clip_value_min=tf.int64.min, clip_value_max=self.n_pieces))
+                             tf.clip_by_value((idx + 1), clip_value_min=tf.int64.min, clip_value_max=self.n_pieces), 2)
 
         # interpolate between left and right point
         return (1 - frac) * left + frac * right
