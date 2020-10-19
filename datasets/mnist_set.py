@@ -3,28 +3,37 @@ import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 
 
-def get_mnist_set_dataset(split=None, min_pixel_brightness=0):
-    if split is None:
-        split=['train[:80%]', 'train[80%:]', 'test']
-    train_ds = tfds.load('mnist', split=split, shuffle_files=True)
-    assert isinstance(train_ds, tf.data.Dataset)
+class MnistSet:
+    def __init__(self, min_pixel_brightness=0):
+        self.tfds_name = 'mnist'
+        self.min_pixel_brightness = min_pixel_brightness
+        self.element_size = 2
 
-    def pixels_to_set(pixels, label):
+    def pixels_to_set(self, pixels, label):
         xy = tf.squeeze(pixels)
-        pixel_indices = tf.where(tf.greater(xy, tf.constant(min_pixel_brightness, dtype=tf.uint8)))
+        pixel_indices = tf.where(tf.greater(xy, tf.constant(self.min_pixel_brightness, dtype=tf.uint8)))
         return xy, pixel_indices, label
 
-    set_dataset = train_ds.map(lambda x: pixels_to_set(x["image"], x["label"]))
-    return set_dataset
+    def get_full_dataset(self):
+        tfds.load(self.tfds_name, split='train+test', shuffle_files=True)
+
+    def get_train_val_test(self, train_split_percent=80):
+        split = [f'train[:{train_split_percent}%]', f'train[{train_split_percent}%:]', 'test']
+        datasets = tfds.load('mnist', split=split, shuffle_files=True)
+        for i in range(len(datasets)):
+            assert isinstance(datasets[i], tf.data.Dataset)
+            datasets[i] = datasets[i].map(lambda row: self.pixels_to_set(row["image"], row["label"]))
+
+        return datasets
 
 
 if __name__ == '__main__':
-    ds = get_mnist_set_dataset(split='train')
-    for sample in ds.take(-1):
+    ds = MnistSet().get_train_val_test()
+    for sample in ds[0].take(-1):
         raw = sample[0].numpy()
-        set = sample[1].numpy()
-        x = set[:, 1]
-        y = set[:, 0]
+        pixel = sample[1].numpy()
+        x = pixel[:, 1]
+        y = pixel[:, 0]
         plt.imshow(raw)
         plt.scatter(x, y)
         plt.draw()

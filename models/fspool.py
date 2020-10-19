@@ -3,7 +3,7 @@ from .layers.tf_torch_gather import torch_gather
 K = tf.keras.backend
 
 
-class FSPool(tf.keras.layers.Layer):
+class FSPool(tf.keras.Model):
     """
         Featurewise sort pooling. From:
         FSPool: Learning Set Representations with Featurewise Sort Pooling.

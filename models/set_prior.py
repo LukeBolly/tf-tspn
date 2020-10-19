@@ -19,15 +19,16 @@ class SetPrior(tf.keras.Model):
             )
         )
 
-    def call(self, input=None):
+    def call(self, num_samples):
         # doesnt matter what we pass in here as actual input is a tf.Variable
-        params = self.parametrization(input)
+        params = self.parametrization(None)
+        params = tf.tile(tf.expand_dims(params, 0), [num_samples, 1, 1])
         return self.learnable_mvndiag(params)
 
 
 if __name__ == '__main__':
     prior = SetPrior(2)
-    distribution = prior(None)
+    distribution = prior(100)
     samples = distribution.sample(2000).numpy()
 
     plt.scatter(samples[:, 0], samples[:, 1])
