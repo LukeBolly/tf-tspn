@@ -4,14 +4,18 @@ import matplotlib.pyplot as plt
 
 
 class MnistSet:
-    def __init__(self, min_pixel_brightness=0):
+    def __init__(self, pad_value, min_pixel_brightness=0):
         self.tfds_name = 'mnist'
         self.min_pixel_brightness = min_pixel_brightness
         self.element_size = 2
+        self.max_num_elements = 314
+        self.pad_value = pad_value
 
     def pixels_to_set(self, pixels, label):
         xy = tf.squeeze(pixels)
         pixel_indices = tf.where(tf.greater(xy, tf.constant(self.min_pixel_brightness, dtype=tf.uint8)))
+        # paddings = [self.max_num_elements - pixel_indices.shape[0]]
+        # padded = tf.pad(pixel_indices, paddings, 'CONSTANT', self.pad_value)
         return xy, pixel_indices, label
 
     def get_full_dataset(self):
@@ -28,8 +32,10 @@ class MnistSet:
 
 
 if __name__ == '__main__':
-    ds = MnistSet().get_train_val_test()
-    for sample in ds[0].take(-1):
+    train, val, test = MnistSet(-999).get_train_val_test()
+    # train = train.batch(100)
+
+    for sample in train.take(-1):
         raw = sample[0].numpy()
         pixel = sample[1].numpy()
         x = pixel[:, 1]

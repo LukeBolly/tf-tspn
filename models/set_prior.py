@@ -11,7 +11,10 @@ tfb = tfp.bijectors
 class SetPrior(tf.keras.Model):
     def __init__(self, event_size, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.parametrization = tfpl.VariableLayer([event_size, event_size], name='loc')
+        self.event_size = event_size
+        mvnd_input_size = 2         # size 2 because loc and scale inputs
+
+        self.parametrization = tfpl.VariableLayer([mvnd_input_size, self.event_size], name='loc')
         self.learnable_mvndiag = tfpl.DistributionLambda(
             make_distribution_fn=lambda t: tfd.MultivariateNormalDiag(
                 loc=t[..., 0],
@@ -19,19 +22,24 @@ class SetPrior(tf.keras.Model):
             )
         )
 
-    def call(self, num_samples):
+    def call(self, set_sizes):
         # doesnt matter what we pass in here as actual input is a tf.Variable
         params = self.parametrization(None)
-        params = tf.tile(tf.expand_dims(params, 0), [num_samples, 1, 1])
-        return self.learnable_mvndiag(params)
+        num_samples = tf.reduce_sum(set_sizes)
+        tiled = tf.repeat(tf.expand_dims(params, 0), num_samples, 0)
+        samples = self.learnable_mvndiag(tiled)
+        shaped = tf.reshape(samples, [num_samples, self.event_size])
+        return shaped
 
 
 if __name__ == '__main__':
-    prior = SetPrior(2)
-    distribution = prior(100)
-    samples = distribution.sample(2000).numpy()
+    event_size = 2
+    set_sizes = [109, 85, 73, 100, 124, 151]
 
-    plt.scatter(samples[:, 0], samples[:, 1])
+    prior = SetPrior(event_size)
+    sample = prior(set_sizes)
+
+    plt.scatter(sample[:, 0], sample[:, 1])
     plt.xlim(-4, 4)
     plt.ylim(-4, 4)
     plt.draw()
