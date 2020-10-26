@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
+import pydevd
 
 
 class MnistSet:
@@ -8,15 +9,16 @@ class MnistSet:
         self.tfds_name = 'mnist'
         self.min_pixel_brightness = min_pixel_brightness
         self.element_size = 2
-        self.max_num_elements = 314
+        self.max_num_elements = 342
         self.pad_value = pad_value
 
     def pixels_to_set(self, pixels, label):
         xy = tf.squeeze(pixels)
         pixel_indices = tf.where(tf.greater(xy, tf.constant(self.min_pixel_brightness, dtype=tf.uint8)))
-        # paddings = [self.max_num_elements - pixel_indices.shape[0]]
-        # padded = tf.pad(pixel_indices, paddings, 'CONSTANT', self.pad_value)
-        return xy, pixel_indices, label
+        size = tf.shape(pixel_indices)[0]
+        paddings = [[0, self.max_num_elements - tf.shape(pixel_indices)[0]], [0, 0]]
+        padded = tf.pad(pixel_indices, paddings, 'CONSTANT', self.pad_value)
+        return xy, padded, size, label
 
     def get_full_dataset(self):
         tfds.load(self.tfds_name, split='train+test', shuffle_files=True)
@@ -33,11 +35,12 @@ class MnistSet:
 
 if __name__ == '__main__':
     train, val, test = MnistSet(-999).get_train_val_test()
-    # train = train.batch(100)
+    train = train.batch(100)
 
     for sample in train.take(-1):
         raw = sample[0].numpy()
         pixel = sample[1].numpy()
+        size = sample[2].numpy()
         x = pixel[:, 1]
         y = pixel[:, 0]
         plt.imshow(raw)
