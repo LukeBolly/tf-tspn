@@ -9,9 +9,8 @@ tfb = tfp.bijectors
 
 
 class SetPrior(tf.keras.Model):
-    def __init__(self, batch_size, max_size, event_size, *args, **kwargs):
+    def __init__(self, max_size, event_size, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.batch_size = batch_size
         self.max_size = max_size
         self.event_size = event_size
         mvnd_input_size = 2         # size 2 because loc and scale inputs
@@ -25,25 +24,25 @@ class SetPrior(tf.keras.Model):
             )
         )
 
-    def call(self, input=None):
-        # doesnt matter what we pass in here as actual input is a tf.Variable
+    def call(self, batch_size):
+        # doesnt matter what we pass in here as tf.VariableLayer ignores input (an error gets thrown if empty though)
         params = self.parametrization(None)
-        tiled = tf.tile(tf.expand_dims(params, 0), [self.batch_size * self.max_size, 1, 1])
+        tiled = tf.tile(tf.expand_dims(params, 0), [batch_size * self.max_size, 1, 1])
         samples = self.learnable_mvndiag(tiled)
-        shaped = tf.reshape(samples, [self.batch_size, self.max_size, self.event_size])
+        shaped = tf.reshape(samples, [batch_size, self.max_size, self.event_size])
         return shaped
 
 
 if __name__ == '__main__':
-    batch_size = 100
+    batch_size = 10
     max_size = 342
     event_size = 2
     # set_sizes = [109, 85, 73, 100, 124, 151]
 
-    prior = SetPrior(batch_size, max_size, event_size)
-    sample = prior(None)
+    prior = SetPrior(max_size, event_size)
+    sample = prior(batch_size)
 
-    plt.scatter(sample[:, 0], sample[:, 1])
+    plt.scatter(sample[..., 0], sample[..., 1])
     plt.xlim(-4, 4)
     plt.ylim(-4, 4)
     plt.draw()
