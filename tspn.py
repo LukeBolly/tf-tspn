@@ -5,6 +5,7 @@ from models.fspool import FSPool
 from models.size_predictor import SizePredictor
 from tools import AttrDict, Every
 from datasets.mnist_set import MnistSet
+from models.functions.chamfer_distance import chamfer_distance
 
 
 def set_config():
@@ -65,7 +66,10 @@ class Tspn(tf.keras.Model):
             sampled_elements_conditioned = tf.concat([padded_sampled_elements, pooled], 2)
             mask = tf.sequence_mask(sizes, self._c.max_set_size)
             pred_set = self._transformer(sampled_elements_conditioned, True, mask)
-            model_loss = nn.
+
+            # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss
+            dist = chamfer_distance(x, pred_set)
+            model_loss = tf.reduce_mean(dist, axis=0)
 
         size_grad = size_tape.gradient(size_loss, self._prior.trainable_weights)
 

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from .layers.tf_torch_gather import torch_gather
+from .functions.tf_torch_gather import torch_gather
 K = tf.keras.backend
 
 
