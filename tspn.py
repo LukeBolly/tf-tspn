@@ -27,14 +27,14 @@ def set_config():
     return config
 
 
-class Tspn(tf.keras.Model):
+class Tspn:
     def __init__(self, config, dataset):
         super().__init__()
         self._c = config
         self._should_eval = Every(config.train_steps)
         self._step = 0
 
-        self.train_ds, self.val_ds, self.test_ds = dataset.get_train_val_test(self._c.pad_value)
+        self.train_ds, self.val_ds, self.test_ds = dataset.get_train_val_test()
 
         self._size_pred = SizePredictor(self._c.size_pred_width)
         self._fsPool = FSPool(dataset.element_size, self._c.fspool_n_pieces)
@@ -71,8 +71,6 @@ class Tspn(tf.keras.Model):
             dist = chamfer_distance(x, pred_set)
             model_loss = tf.reduce_mean(dist, axis=0)
 
-        size_grad = size_tape.gradient(size_loss, self._prior.trainable_weights)
-
     def train_size_predictor_step(self, x, sizes):
         with tf.GradientTape() as size_tape:
             pooled, perm = self._fsPool(x, sizes)   # pooled: [batch_size, num_features]
@@ -83,5 +81,6 @@ class Tspn(tf.keras.Model):
 
 if __name__ == '__main__':
     config = set_config()
-    dataset = MnistSet()
-    Tspn(config, dataset)
+    dataset = MnistSet(config.pad_value)
+    tspn = Tspn(config, dataset)
+    tspn.train()

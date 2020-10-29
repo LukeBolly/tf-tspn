@@ -15,7 +15,7 @@ class FSPool(tf.keras.Model):
         n_pieces: Number of pieces in piecewise linear
         relaxed: Use sorting networks relaxation instead of traditional sorting
         """
-        super().__init__()
+        super(FSPool, self).__init__()
         self.n_pieces = n_pieces
         self.relaxed = relaxed
         self.weight = self.add_weight("weight", shape=[in_channels, n_pieces + 1])

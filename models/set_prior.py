@@ -10,7 +10,7 @@ tfb = tfp.bijectors
 
 class SetPrior(tf.keras.Model):
     def __init__(self, max_size, event_size, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super(SetPrior, self).__init__()
         self.max_size = max_size
         self.event_size = event_size
         mvnd_input_size = 2         # size 2 because loc and scale inputs
