@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow_graphics.util import shape
 
 # function was not available in tfg-gpu at time of writing, this is an import from github
 # https://github.com/tensorflow/graphics/blob/master/tensorflow_graphics/nn/loss/chamfer_distance.py
@@ -34,18 +33,6 @@ def chamfer_distance(point_set_a, point_set_b, name=None):
     with tf.compat.v1.name_scope(name, "chamfer_distance_evaluate", [point_set_a, point_set_b]):
         point_set_a = tf.convert_to_tensor(value=point_set_a)
         point_set_b = tf.convert_to_tensor(value=point_set_b)
-
-        shape.compare_batch_dimensions(
-            tensors=(point_set_a, point_set_b),
-            tensor_names=("point_set_a", "point_set_b"),
-            last_axes=-3,
-            broadcast_compatible=True)
-        # Verify that the last axis of the tensors has the same dimension.
-        dimension = point_set_a.shape.as_list()[-1]
-        shape.check_static(
-            tensor=point_set_b,
-            tensor_name="point_set_b",
-            has_dim_equals=(-1, dimension))
 
         # Create N x M matrix where the entry i,j corresponds to ai - bj (vector of
         # dimension D).
