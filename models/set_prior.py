@@ -15,7 +15,7 @@ class SetPrior(tf.keras.Model):
         mvnd_input_size = 2         # size 2 because loc and scale inputs
 
         self.parametrization = tfpl.VariableLayer([self.event_size, mvnd_input_size],
-                                                  name='loc')
+                                                  name='loc', dtype=tf.float32)
         self.learnable_mvndiag = tfpl.DistributionLambda(
             make_distribution_fn=lambda t: tfd.MultivariateNormalDiag(
                 loc=t[..., 0],

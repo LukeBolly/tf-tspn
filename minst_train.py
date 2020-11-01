@@ -20,7 +20,7 @@ def set_config():
     config.size_pred_width = 128
     config.train_steps = 100
     config.pad_value = -99999
-    config.learning_rate = 0.001
+    config.learning_rate = 0.01
 
     # training config
     config.num_epochs = 100
@@ -33,12 +33,14 @@ class Tspn:
         self._c = config
         self._should_eval = Every(config.train_steps)
         self._step = 0
+        self.max_set_size = dataset.max_num_elements
+        self.element_size = dataset.element_size
 
         self.train_ds, self.val_ds, self.test_ds = dataset.get_train_val_test()
 
         self._size_pred = SizePredictor(self._c.size_pred_width)
-        self._encoder = FSPool(dataset.element_size, self._c.fspool_n_pieces)
-        self._prior = SetPrior(dataset.element_size)
+        self._encoder = FSPool(self.element_size, self._c.fspool_n_pieces)
+        self._prior = SetPrior(self.element_size)
         self._transformer = Encoder(self._c.transformer_depth, self._c.attn_size, self._c.num_heads,
                                     self._c.dense_size, rate=0)
         self.optimiser = tf.optimizers.Adam(self._c.learning_rate)
@@ -49,6 +51,10 @@ class Tspn:
             print(' starting epoch: ' + str(epoch))
             for step, (images, sets, sizes, labels) in enumerate(self.train_ds):
                 self.train_set_predictor_step(sets, sizes)
+
+        stuff = self._prior.sample(100)
+        pass
+
 
 
     def train_set_predictor_step(self, x, sizes):
@@ -64,10 +70,15 @@ class Tspn:
             prior_loss = tf.reduce_mean(prior_error)
 
         with tf.GradientTape() as model_tape:
-            pooled, perm = self._encoder(x, sizes)   # pooled: [batch_size, num_features]
+            x_trans = tf.transpose(x, [0, 2, 1])
+            encoded, perm = self._encoder(x_trans, sizes)   # pooled: [batch_size, num_features]
+            encoded_shaped = tf.tile(tf.expand_dims(encoded, 1), [1, self.max_set_size, 1])
             # concat the conditioning vector onto each element
-            sampled_elements_conditioned = tf.concat([padded_sampled_elements, pooled], 2)
-            mask = tf.sequence_mask(sizes, self._c.max_set_size)
+            samples_ragged = tf.RaggedTensor.from_row_lengths(sampled_elements, sizes)
+            padded_samples = samples_ragged.to_tensor(default_value=self._c.pad_value,
+                                                      shape=[self._c.batch_size, self.max_set_size, self.element_size])
+            sampled_elements_conditioned = tf.concat([padded_samples, encoded_shaped], 2)
+            mask = tf.sequence_mask(sizes, self.max_set_size)
             pred_set = self._transformer(sampled_elements_conditioned, True, mask)
 
             # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss

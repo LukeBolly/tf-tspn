@@ -1,7 +1,6 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
-import pydevd
 
 
 class MnistSet:
@@ -17,7 +16,7 @@ class MnistSet:
         pixel_indices = tf.where(tf.greater(xy, tf.constant(self.min_pixel_brightness, dtype=tf.uint8)))
         size = tf.shape(pixel_indices)[0]
         paddings = [[0, self.max_num_elements - tf.shape(pixel_indices)[0]], [0, 0]]
-        padded = tf.pad(pixel_indices, paddings, 'CONSTANT', self.pad_value)
+        padded = tf.cast(tf.pad(pixel_indices, paddings, 'CONSTANT', self.pad_value), tf.float32)
         return xy, padded, size, label
 
     def get_full_dataset(self):
