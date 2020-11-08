@@ -1,11 +1,11 @@
 import tensorflow as tf
 from models.set_prior import SetPrior
-from models.transformer import Encoder
 from models.fspool import FSPool
 from models.size_predictor import SizePredictor
 from tools import AttrDict, Every
 from datasets.mnist_set import MnistSet
 from models.functions.chamfer_distance import chamfer_distance
+from models.set_transformer import STEncoder
 
 
 def set_config():
@@ -41,9 +41,8 @@ class Tspn:
         self._size_pred = SizePredictor(self._c.size_pred_width)
         self._encoder = FSPool(self.element_size, self._c.fspool_n_pieces)
         self._prior = SetPrior(self.element_size)
-        self._transformer = Encoder(self._c.transformer_depth, self._c.attn_size, self._c.num_heads,
-                                    self._c.dense_size, rate=0)
-        self.optimiser = tf.optimizers.Adam(self._c.learning_rate)
+        self._transformer = STEncoder(self._c.transformer_depth, self._c.attn_size, self._c.num_heads)
+        self._optimiser = tf.optimizers.Adam(self._c.learning_rate)
 
     def train(self):
         self.train_ds = self.train_ds.batch(self._c.batch_size)
@@ -78,7 +77,8 @@ class Tspn:
             padded_samples = samples_ragged.to_tensor(default_value=self._c.pad_value,
                                                       shape=[self._c.batch_size, self.max_set_size, self.element_size])
             sampled_elements_conditioned = tf.concat([padded_samples, encoded_shaped], 2)
-            mask = tf.sequence_mask(sizes, self.max_set_size)
+            mask = tf.cast(tf.math.logical_not(tf.sequence_mask(sizes, self.max_set_size)), tf.float32)
+            mask = mask[:, tf.newaxis, tf.newaxis, :]   # mask shape for transformer is (batch_size, 1, 1, seq_len)
             pred_set = self._transformer(sampled_elements_conditioned, True, mask)
 
             # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss
@@ -86,11 +86,11 @@ class Tspn:
             model_loss = tf.reduce_mean(dist, axis=0)
 
         prior_grads = prior_tape.gradient(prior_loss, self._prior.trainable_weights)
-        self.optimiser.apply_gradients(zip(prior_grads, self._prior.trainable_weights))
+        self._optimiser.apply_gradients(zip(prior_grads, self._prior.trainable_weights))
 
         model_trainables = self._encoder.trainable_weights + self._transformer.trainable_weights
         model_grads = model_tape(model_loss, model_trainables)
-        self.optimiser.apply_gradients(zip(model_grads, model_trainables))
+        self._optimiser.apply_gradients(zip(model_grads, model_trainables))
 
 
     def train_size_predictor_step(self, x, sizes):
