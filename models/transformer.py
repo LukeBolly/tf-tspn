@@ -101,6 +101,8 @@ class Encoder(tf.keras.layers.Layer):
         self.out_ff = tf.keras.layers.Dense(element_size)
 
     def call(self, x, mask):
+        mask = mask[:, tf.newaxis, tf.newaxis, :]  # mask shape for transformer is (batch_size, 1, 1, seq_len)
+
         # adding embedding and position encoding.
         x = self.embedding(x)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))

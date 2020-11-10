@@ -4,7 +4,7 @@ import tensorflow as tf
 # https://github.com/tensorflow/graphics/blob/master/tensorflow_graphics/nn/loss/chamfer_distance.py
 
 
-def chamfer_distance(point_set_a, point_set_b, name=None):
+def chamfer_distance(point_set_a, point_set_b, sizes, name=None):
     """Computes the Chamfer distance for the given two point sets.
     Note:
     This is a symmetric version of the Chamfer distance, calculated as the sum
@@ -42,11 +42,12 @@ def chamfer_distance(point_set_a, point_set_b, name=None):
         # Calculate the square distances between each two points: |ai - bj|^2.
         square_distances = tf.einsum("...i,...i->...", difference, difference)
 
-        minimum_square_distance_a_to_b = tf.reduce_min(
-            input_tensor=square_distances, axis=-1)
-        minimum_square_distance_b_to_a = tf.reduce_min(
-            input_tensor=square_distances, axis=-2)
+        minimum_square_distance_a_to_b = tf.reduce_min(input_tensor=square_distances, axis=-1)
+        minimum_square_distance_a_to_b = tf.RaggedTensor.from_tensor(minimum_square_distance_a_to_b, sizes)
 
-        return (
-            tf.reduce_mean(input_tensor=minimum_square_distance_a_to_b, axis=-1) +
-            tf.reduce_mean(input_tensor=minimum_square_distance_b_to_a, axis=-1))
+        minimum_square_distance_b_to_a = tf.reduce_min(input_tensor=square_distances, axis=-2)
+        minimum_square_distance_b_to_a = tf.RaggedTensor.from_tensor(minimum_square_distance_b_to_a, sizes)
+
+        setwise_distance = (tf.reduce_mean(input_tensor=minimum_square_distance_a_to_b, axis=-1) +
+                            tf.reduce_mean(input_tensor=minimum_square_distance_b_to_a, axis=-1))
+        return setwise_distance

@@ -78,19 +78,19 @@ class Tspn:
             padded_samples = samples_ragged.to_tensor(default_value=self._c.pad_value,
                                                       shape=[self._c.batch_size, self.max_set_size, self.element_size])
             sampled_elements_conditioned = tf.concat([padded_samples, encoded_shaped], 2)
-            mask = tf.cast(tf.math.logical_not(tf.sequence_mask(sizes, self.max_set_size)), tf.float32)
-            mask = mask[:, tf.newaxis, tf.newaxis, :]   # mask shape for transformer is (batch_size, 1, 1, seq_len)
-            pred_set = self._transformer(sampled_elements_conditioned, mask)
+
+            masked_values = tf.cast(tf.math.logical_not(tf.sequence_mask(sizes, self.max_set_size)), tf.float32)
+            pred_set = self._transformer(sampled_elements_conditioned, masked_values)
 
             # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss
-            dist = chamfer_distance(x, pred_set)
+            dist = chamfer_distance(x, pred_set, sizes)
             model_loss = tf.reduce_mean(dist, axis=0)
 
         prior_grads = prior_tape.gradient(prior_loss, self._prior.trainable_weights)
         self.optimiser.apply_gradients(zip(prior_grads, self._prior.trainable_weights))
 
         model_trainables = self._encoder.trainable_weights + self._transformer.trainable_weights
-        model_grads = model_tape(model_loss, model_trainables)
+        model_grads = model_tape.gradient(model_loss, model_trainables)
         self.optimiser.apply_gradients(zip(model_grads, model_trainables))
 
 
