@@ -2,6 +2,7 @@ import tensorflow as tf
 K = tf.keras.backend
 
 
+# port of the pytorch gather function
 def torch_gather(x, indices, gather_axis):
     # if pytorch gather indices are
     # [[[0, 10, 20], [0, 10, 20], [0, 10, 20]],

@@ -18,17 +18,43 @@ def plot_to_image(figure):
     image = tf.expand_dims(image, 0)
     return image
 
-def set_to_plot(raw, pixel, label):
-    figure = plt.figure(figsize=(10, 100))
-    for i in range(raw.shape[0]):
-        # Start next subplot.
-        plt.subplot(1, raw.shape[0], i + 1, title=str(label[i]))
-        plt.xticks([])
-        plt.yticks([])
-        plt.grid(False)
-        x = pixel[i, :, 1]
-        y = pixel[i, :, 0]
-        plt.imshow(raw[0])
+
+def set_to_plot(raw, true, sampled, predicted):
+    num_elements = true.shape[0]
+    img_size = 2
+    plots_per_sample = 4
+    figure = plt.figure(figsize=(img_size * plots_per_sample, num_elements * img_size))
+    plt.grid(False)
+    plt.tight_layout()
+
+    # image
+    for i in range(num_elements):
+        # mnist image
+        if raw is not None:
+            plt.subplot(num_elements, plots_per_sample, i * plots_per_sample + 1)
+            plt.xticks([])
+            plt.yticks([])
+            plt.imshow(raw[i])
+
+        # truth set
+        plt.subplot(num_elements, plots_per_sample, i * plots_per_sample + 2)
+        x = true[i, :, 1]
+        y = true[i, :, 0]
         plt.scatter(x, y)
+        plt.axis([0, 1, 1, 0])
+
+        # sampled set
+        plt.subplot(num_elements, plots_per_sample, i * plots_per_sample + 3)
+        x = sampled[i, :, 1]
+        y = sampled[i, :, 0]
+        plt.scatter(x, y)
+        plt.axis([0, 1, 1, 0])
+
+        # predicted set
+        plt.subplot(num_elements, plots_per_sample, i * plots_per_sample + 4)
+        x = predicted[i, :, 1]
+        y = predicted[i, :, 0]
+        plt.scatter(x, y)
+        plt.axis([0, 1, 1, 0])
 
     return figure

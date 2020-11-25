@@ -3,7 +3,32 @@ from .functions.tf_torch_gather import torch_gather
 K = tf.keras.backend
 
 
-class FSPool(tf.keras.Model):
+class FSEncoder(tf.keras.layers.Layer):
+    def __init__(self, encoder_dim, latent_dim, n_pieces):
+        super(FSEncoder, self).__init__()
+        self.conv1 = tf.keras.layers.Conv1D(encoder_dim, 1)
+        self.conv2 = tf.keras.layers.Conv1D(encoder_dim, 1)
+
+        self.pool = FSPool(encoder_dim, n_pieces)
+
+        self.linear1 = tf.keras.layers.Dense(encoder_dim, activation='relu')
+        self.linear2 = tf.keras.layers.Dense(latent_dim)
+
+    def call(self, x, sizes):
+        x = self.conv1(x)
+        x = tf.keras.activations.relu(x)
+        x = self.conv2(x)
+
+        x = tf.transpose(x, [0, 2, 1])
+        x, perm = self.pool(x, sizes)
+
+        x = self.linear1(x)
+        x = self.linear2(x)
+
+        return x
+
+
+class FSPool(tf.keras.layers.Layer):
     """
         Featurewise sort pooling. From:
         FSPool: Learning Set Representations with Featurewise Sort Pooling.
@@ -19,9 +44,6 @@ class FSPool(tf.keras.Model):
         self.n_pieces = n_pieces
         self.relaxed = relaxed
         self.weight = self.add_weight("weight", shape=[in_channels, n_pieces + 1])
-
-    def build(self, input_shape):
-        pass
 
     def call(self, x, n=None):
         """ FSPool
@@ -103,11 +125,12 @@ def fill_sizes(sizes, x=None):
     expanded = tf.expand_dims(size_tensor, axis=0)
     total_sizes = tf.expand_dims(tf.clip_by_value((tf.cast(sizes, dtype=tf.float32) - 1),
                                                   clip_value_min=1, clip_value_max=tf.float32.max), axis=1)
-    size_tensor = tf.clip_by_value(tf.math.divide(expanded, total_sizes),
-                                   clip_value_min=tf.float32.min, clip_value_max=1)
+    size_tensor = tf.math.divide(expanded, total_sizes)
 
     mask = size_tensor <= 1
     mask = tf.cast(tf.expand_dims(mask, axis=1), dtype=tf.float32)
+
+    size_tensor = tf.clip_by_value(size_tensor, clip_value_min=tf.float32.min, clip_value_max=1)
 
     return size_tensor, mask
 

@@ -33,7 +33,7 @@ class MultiHeadAttention(tf.keras.layers.Layer):
         self.wk = tf.keras.layers.Dense(d_model)
         self.wv = tf.keras.layers.Dense(d_model)
 
-        self.dense = tf.keras.layers.Dense(d_model )
+        self.dense = tf.keras.layers.Dense(d_model)
 
     def split_heads(self, x, batch_size):
         """Split the last dimension into (num_heads, depth).
@@ -95,10 +95,12 @@ class Encoder(tf.keras.layers.Layer):
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Dense(d_model)
+        self.embedding = tf.keras.layers.Conv1D(d_model, 1, kernel_initializer='he_normal', use_bias=False,
+                                                kernel_regularizer=tf.keras.regularizers.l2(1e-4))
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff)
                            for _ in range(num_layers)]
-        self.out_ff = tf.keras.layers.Dense(element_size)
+        self.out_ff = tf.keras.layers.Conv1D(element_size, 1, kernel_initializer='he_normal', use_bias=False,
+                                             kernel_regularizer=tf.keras.regularizers.l2(1e-4))
 
     def call(self, x, mask):
         mask = mask[:, tf.newaxis, tf.newaxis, :]  # mask shape for transformer is (batch_size, 1, 1, seq_len)
@@ -134,7 +136,6 @@ class DecoderLayer(tf.keras.layers.Layer):
 
     def call(self, x, enc_output, training, padding_mask):
         # enc_output.shape == (batch_size, input_seq_len, d_model)
-
         attn1, attn_weights_block1 = self.mha1(x, x, x)  # (batch_size, target_seq_len, d_model)
         attn1 = self.dropout1(attn1, training=training)
         out1 = self.layernorm1(attn1 + x)

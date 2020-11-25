@@ -181,7 +181,8 @@ def cont_sort(x, perm=None, temp=1):
 
 if __name__ == "__main__":
     n_pieces = 20
-    set_data = [[[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[10, 11, 12], [13, 14, 15], [16, 17, 18]]]
+    set_data = [[[1, 2, 3, 3], [4, 5, 6, 3], [7, 8, 9, 3]], [[10, 11, 12, 3], [13, 14, 15, 3], [16, 17, 18, 3]]]
+    set_sizes = [3, 2]
 
     # check the FSPool model has been correctly ported
     pt_c1 = torch.arange(0, 1, 1.0 / (n_pieces + 1))
@@ -191,7 +192,8 @@ if __name__ == "__main__":
 
     torch_pool = FSPool(3, 20, weight=pt_weight)
     torch_set = torch.tensor(set_data)
-    torch_out, torch_perm = torch_pool(torch_set)
+    torch_size = torch.tensor(set_sizes)
+    torch_out, torch_perm = torch_pool(torch_set, torch_size)
 
     tf_c1 = K.arange(0, 1, 1.0 / (n_pieces + 1), dtype=tf.float32)
     tf_c2 = tf.reverse(K.arange(0, 0.5, 0.5 / (n_pieces + 1), dtype=tf.float32), [0])
@@ -200,8 +202,9 @@ if __name__ == "__main__":
 
     tf_pool = fspool.FSPool(3, 20)
     tf_pool.weight = tf_weight
-    tf_set = tf.Variable(set_data, dtype=tf.float32)
-    tf_out, tf_perm = tf_pool(tf_set)
+    tf_set = tf.constant(set_data, dtype=tf.float32)
+    tf_size = tf.constant(set_sizes)
+    tf_out, tf_perm = tf_pool(tf_set, tf_size)
 
     print("output")
     print(torch_out)
