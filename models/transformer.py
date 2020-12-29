@@ -69,11 +69,11 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff):
+    def __init__(self, d_model, num_heads):
         super(EncoderLayer, self).__init__()
 
         self.mha = MultiHeadAttention(d_model, num_heads)
-        self.ffn = point_wise_feed_forward_network(d_model, dff)
+        self.ffn = point_wise_feed_forward_network(d_model)
 
         self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
         self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
@@ -89,30 +89,24 @@ class EncoderLayer(tf.keras.layers.Layer):
 
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, num_layers, d_model, num_heads, dff, element_size):
+    def __init__(self, num_layers, d_model, num_heads, element_size):
         super(Encoder, self).__init__()
 
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Conv1D(d_model, 1, kernel_initializer='he_normal', use_bias=False,
-                                                kernel_regularizer=tf.keras.regularizers.l2(1e-4))
-        self.enc_layers = [EncoderLayer(d_model, num_heads, dff)
+        self.embedding = tf.keras.layers.Conv1D(d_model, 1, kernel_initializer='glorot_uniform', use_bias=True)
+        self.enc_layers = [EncoderLayer(d_model, num_heads)
                            for _ in range(num_layers)]
-        self.out_ff = tf.keras.layers.Conv1D(element_size, 1, kernel_initializer='he_normal', use_bias=False,
-                                             kernel_regularizer=tf.keras.regularizers.l2(1e-4))
 
-    def call(self, x, mask):
+    def call(self, input, mask):
         mask = mask[:, tf.newaxis, tf.newaxis, :]  # mask shape for transformer is (batch_size, 1, 1, seq_len)
 
         # adding embedding and position encoding.
-        x = self.embedding(x)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        x = self.embedding(input)
 
         for i in range(self.num_layers):
             x = self.enc_layers[i](x, mask)
-
-        x = self.out_ff(x)
 
         return x  # (batch_size, input_seq_len, d_model)
 
@@ -179,9 +173,9 @@ class Decoder(tf.keras.layers.Layer):
         return x, attention_weights
 
 
-def point_wise_feed_forward_network(d_model, dff):
+def point_wise_feed_forward_network(d_model):
   return tf.keras.Sequential([
-      tf.keras.layers.Dense(dff, activation='relu'),  # (batch_size, seq_len, dff)
+      tf.keras.layers.Dense(d_model, activation='relu'),  # (batch_size, seq_len, dff)
       tf.keras.layers.Dense(d_model)  # (batch_size, seq_len, d_model)
   ])
 

@@ -29,6 +29,7 @@ class MnistSet:
         ds = tfds.load('mnist', split=split, shuffle_files=True)[0]
         assert isinstance(ds, tf.data.Dataset)
         ds = ds.map(lambda row: self.pixels_to_set(row["image"], row["label"]))
+        ds.filter(lambda xy, padded, size, label: size > 50)
         return ds
 
     def get_val_set(self):
@@ -47,7 +48,7 @@ class MnistSet:
 
 
 if __name__ == '__main__':
-    train = MnistSet(80, -999).get_train_set()
+    train = MnistSet(80, -999, 50).get_train_set()
 
     for sample in train.take(-1):
         raw = sample[0].numpy()

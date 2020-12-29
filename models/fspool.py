@@ -4,20 +4,23 @@ K = tf.keras.backend
 
 
 class FSEncoder(tf.keras.layers.Layer):
-    def __init__(self, encoder_dim, latent_dim, n_pieces):
+    def __init__(self, encoder_dim, encoder_output_channels, n_pieces):
         super(FSEncoder, self).__init__()
-        self.conv1 = tf.keras.layers.Conv1D(encoder_dim, 1)
-        self.conv2 = tf.keras.layers.Conv1D(encoder_dim, 1)
+        self.conv1 = tf.keras.layers.Conv1D(encoder_dim, 1, kernel_initializer='glorot_uniform', use_bias=True)
+        self.conv2 = tf.keras.layers.Conv1D(encoder_dim, 1, kernel_initializer='glorot_uniform', use_bias=True)
+        self.conv3 = tf.keras.layers.Conv1D(encoder_output_channels, 1, kernel_initializer='glorot_uniform', use_bias=True)
 
-        self.pool = FSPool(encoder_dim, n_pieces)
+        self.pool = FSPool(encoder_output_channels, n_pieces)
 
-        self.linear1 = tf.keras.layers.Dense(encoder_dim, activation='relu')
-        self.linear2 = tf.keras.layers.Dense(latent_dim)
+        self.linear1 = tf.keras.layers.Dense(encoder_output_channels, activation='relu')
+        self.linear2 = tf.keras.layers.Dense(encoder_output_channels)
 
     def call(self, x, sizes):
         x = self.conv1(x)
         x = tf.keras.activations.relu(x)
         x = self.conv2(x)
+        x = tf.keras.activations.relu(x)
+        x = self.conv3(x)
 
         x = tf.transpose(x, [0, 2, 1])
         x, perm = self.pool(x, sizes)
