@@ -1,15 +1,12 @@
 import tensorflow as tf
-from models.set_prior import SetPrior
-from models.set_transformer import SetTransformerEncoder
-from models.fspool import FSEncoder
 from models.size_predictor import SizePredictor
 from tools import AttrDict, Every
 from datasets.mnist_set import MnistSet
 from models.functions.chamfer_distance import chamfer_distance
 import datetime
 from visualisation import mnist_visualiser
-from models.transformer import Encoder
 import math
+from models.tspn import Tspn
 
 
 def set_config():
@@ -20,7 +17,7 @@ def set_config():
     config.trans_layers = 3
     config.trans_attn_size = 256
     config.trans_num_heads = 4
-    config.encoder_dim = 256
+    config.encoder_latent = 256
     config.encoder_output_channels = 64
     config.fspool_n_pieces = 20
     config.size_pred_width = 128
@@ -37,7 +34,7 @@ def set_config():
     return config
 
 
-class Tspn:
+class TspnMnist:
     def __init__(self, config, dataset):
         self._c = config
         self._should_eval = Every(config.train_steps)
@@ -49,19 +46,16 @@ class Tspn:
 
         self._size_pred = SizePredictor(self._c.size_pred_width)
 
+        self.tspn = Tspn(self._c.encoder_latent, self._c.encoder_output_channels, self._c.fspool_n_pieces,
+                         self._c.trans_layers, self._c.trans_attn_size, self._c.trans_num_heads,
+                         self.dataset.element_size, self._c.pad_value, self.dataset.max_num_elements)
 
         self.tspn_optimiser = tf.optimizers.Adam(self._c.tspn_learning_rate)
         self.prior_optimiser = tf.optimizers.Adam(self._c.prior_learning_rate)
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/metrics/' + current_time
-        ckpt_dir = 'logs/checkpoints'
         self.summary_writer = tf.summary.create_file_writer(train_log_dir)
-
-        ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=self.tspn_optimiser, net=net, iterator=iterator)
-        self.checkpoint_manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep=3)
-
-        self.min_loss = 999
 
     def train(self):
         train_ds = self.dataset.get_train_set().batch(self._c.batch_size)
@@ -82,8 +76,7 @@ class Tspn:
         for epoch in range(self._c.num_epochs):
             print('tspn training epoch: ' + str(epoch))
             for train_step, (images, sets, sizes, labels) in enumerate(train_ds):
-                padded_samples = self.sample_prior(sizes)
-                train_model_loss = self.train_tspn_step(sets, padded_samples, sizes)
+                train_model_loss = self.train_tspn_step(sets, sizes)
                 self._step += 1
 
                 with self.summary_writer.as_default():
@@ -109,61 +102,49 @@ class Tspn:
                 tf.summary.scalar('val/prior loss', val_prior_loss_sum / val_step, step=self._step)
                 tf.summary.scalar('val/model loss', math.log10(val_model_loss_sum / val_step), step=self._step)
 
-    def prior_loss(self, x, sizes):
-        sampled_elements = self.run_prior(sizes)
+    def prior_loss(self, initial_set, sizes):
+        sampled_set = self.tspn.sample_prior(sizes)
 
         # exclude padded values and flatten our batch of sets
-        padded_x = x[:, :, 0]
-        unpadded_indices = tf.where(tf.not_equal(padded_x, self._c.pad_value))
-        initial_elements = tf.cast(tf.gather_nd(x, unpadded_indices), tf.float32)
+        unpadded_indices = tf.where(tf.not_equal(initial_set[:, :, 0], self._c.pad_value))
+        initial_set_flattened = tf.cast(tf.gather_nd(initial_set, unpadded_indices), tf.float32)
 
         negloglik = lambda y, p_y: -p_y.log_prob(y)
-        prior_error = negloglik(initial_elements, sampled_elements)
+        prior_error = negloglik(initial_set_flattened, sampled_set)
         prior_loss = tf.reduce_mean(prior_error)
 
-        samples_ragged = tf.RaggedTensor.from_row_lengths(sampled_elements, sizes)
+        samples_ragged = tf.RaggedTensor.from_row_lengths(sampled_set, sizes)
         padded_samples = samples_ragged.to_tensor(default_value=self._c.pad_value,
                                                   shape=[sizes.shape[0], self.max_set_size, self.element_size])
+
         return padded_samples, prior_loss
 
-    def run_tspn(self, x, padded_samples, sizes):
-        encoded = self._encoder(x, sizes)  # pooled: [batch_size, num_features]
-        encoded_shaped = tf.tile(tf.expand_dims(encoded, 1), [1, self.max_set_size, 1])
-        # concat the conditioning vector onto each element
-
-        sampled_elements_conditioned = tf.concat([padded_samples, encoded_shaped], 2)
-
-        masked_values = tf.cast(tf.math.logical_not(tf.sequence_mask(sizes, self.max_set_size)), tf.float32)
-        pred_set = self._transformer(sampled_elements_conditioned, masked_values)
-        return pred_set
-
-    def tspn_loss(self, x, sampled_elements, sizes):
-        pred_set = self.run_tspn(x, sampled_elements, sizes)
-
-        # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss
-        dist = chamfer_distance(x, pred_set, sizes)
-
-        model_loss = tf.reduce_mean(dist, axis=0)
-        if model_loss < self.min_loss:
-            self.min_loss = model_loss
-        if model_loss > self.min_loss + 0.0015 and self._step > 500:
-            pass
-        return pred_set, model_loss
-
-    def train_prior_step(self,x, sizes):
+    def train_prior_step(self, x, sizes):
         with tf.GradientTape() as prior_tape:
-            padded_samples, prior_loss = self.prior_loss(x, sizes)
+            sampled_set, prior_loss = self.prior_loss(x, sizes)
 
-        prior_grads = prior_tape.gradient(prior_loss, self._prior.trainable_weights)
-        self.prior_optimiser.apply_gradients(zip(prior_grads, self._prior.trainable_weights))
+        prior_trainables = self.tspn.get_prior_weights()
+        prior_grads = prior_tape.gradient(prior_loss, prior_trainables)
+        self.prior_optimiser.apply_gradients(zip(prior_grads, prior_trainables))
 
         return prior_loss
 
-    def train_tspn_step(self, x, padded_samples, sizes):
-        with tf.GradientTape() as model_tape:
-            pred_set, model_loss = self.tspn_loss(x, padded_samples, sizes)
+    def tspn_loss(self, x, sampled_set, sizes):
+        pred_set = self.tspn(x, sampled_set, sizes)
 
-        model_trainables = self._encoder.trainable_weights + self._transformer.trainable_weights
+        # although the arrays contain padded values, chamfer loss is a sum over elements so it wont effect loss
+        dist = chamfer_distance(x, pred_set, sizes)
+        model_loss = tf.reduce_mean(dist, axis=0)
+
+        return pred_set, model_loss
+
+    def train_tspn_step(self, initial_set, sizes):
+        sampled_set = self.tspn.sample_prior_batch(sizes)
+
+        with tf.GradientTape() as model_tape:
+            pred_set, model_loss = self.tspn_loss(initial_set, sampled_set, sizes)
+
+        model_trainables = self.tspn.get_autoencoder_weights()
         model_grads = model_tape.gradient(model_loss, model_trainables)
         self.tspn_optimiser.apply_gradients(zip(model_grads, model_trainables))
         return model_loss
@@ -183,5 +164,5 @@ class Tspn:
 if __name__ == '__main__':
     config = set_config()
     dataset = MnistSet(config.train_split, config.pad_value, 100)
-    tspn = Tspn(config, dataset)
+    tspn = TspnMnist(config, dataset)
     tspn.train()
