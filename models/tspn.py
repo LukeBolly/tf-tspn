@@ -2,11 +2,12 @@ import tensorflow as tf
 from models.fspool import FSEncoder
 from models.transformer import Encoder
 from models.set_prior import SetPrior
+from models.size_predictor import SizePredictor
 
 
 class Tspn(tf.keras.Model):
     def __init__(self, encoder_latent, encoder_out, fspool_n_pieces, transformer_layers, transformer_attn_size,
-                 transformer_num_heads, num_element_features, pad_value, max_set_size):
+                 transformer_num_heads, num_element_features, size_pred_width, pad_value, max_set_size):
         super(Tspn, self).__init__()
 
         self.pad_value = pad_value
@@ -16,13 +17,14 @@ class Tspn(tf.keras.Model):
         self._prior = SetPrior(num_element_features)
 
         self._encoder = FSEncoder(encoder_latent, encoder_out, fspool_n_pieces)
-        self._transformer = Encoder(transformer_layers, transformer_attn_size, transformer_num_heads,
-                                    num_element_features)
+        self._transformer = Encoder(transformer_layers, transformer_attn_size, transformer_num_heads)
 
         # initialise the output to predict points at the center of our canvas
         self._set_prediction = tf.keras.layers.Conv1D(num_element_features, 1, kernel_initializer='zeros',
-                                                      bias_initializer=tf.keras.initializers.constant(0.5),
-                                                      use_bias=True)
+                                                     bias_initializer=tf.keras.initializers.constant(0.5),
+                                                     use_bias=True)
+
+        self._size_predictor = SizePredictor(size_pred_width)
 
     def call(self, initial_set, sampled_set, sizes):
         # encode the input set
@@ -38,14 +40,6 @@ class Tspn(tf.keras.Model):
         pred_set = self._set_prediction(pred_set_latent)
         return pred_set
 
-    def get_autoencoder_weights(self):
-        return self._encoder.trainable_weights + \
-               self._transformer.trainable_weights + \
-               self._set_prediction.trainable_weights
-
-    def get_prior_weights(self):
-        return self._prior.trainable_weights
-
     def sample_prior(self, sizes):
         total_elements = tf.reduce_sum(sizes)
         sampled_elements = self._prior(total_elements)  # [batch_size, max_set_size, num_features]
@@ -56,5 +50,21 @@ class Tspn(tf.keras.Model):
         samples_ragged = tf.RaggedTensor.from_row_lengths(sampled_elements, sizes)
         padded_samples = samples_ragged.to_tensor(default_value=self.pad_value,
                                                   shape=[sizes.shape[0], self.max_set_size, self.num_element_features])
-
         return padded_samples
+
+    def encode_set(self, initial_set, sizes):
+        return self._encoder(initial_set, sizes)
+
+    def predict_size(self, embedding):
+        return self._size_predictor(embedding)
+
+    def get_autoencoder_weights(self):
+        return self._encoder.trainable_weights + \
+               self._transformer.trainable_weights + \
+               self._set_prediction.trainable_weights
+
+    def get_prior_weights(self):
+        return self._prior.trainable_weights
+
+    def get_size_predictor_weights(self):
+        return self._size_predictor.trainable_weights

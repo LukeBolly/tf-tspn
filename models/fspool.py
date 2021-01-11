@@ -12,20 +12,21 @@ class FSEncoder(tf.keras.layers.Layer):
 
         self.pool = FSPool(encoder_output_channels, n_pieces)
 
-        self.linear1 = tf.keras.layers.Dense(encoder_output_channels, activation='relu')
-        self.linear2 = tf.keras.layers.Dense(encoder_output_channels)
+        self.linear1 = tf.keras.layers.Dense(encoder_output_channels, kernel_initializer='glorot_uniform')
+        self.linear2 = tf.keras.layers.Dense(encoder_output_channels, kernel_initializer='glorot_uniform')
 
     def call(self, x, sizes):
         x = self.conv1(x)
-        x = tf.keras.activations.relu(x)
+        x = tf.nn.leaky_relu(x)
         x = self.conv2(x)
-        x = tf.keras.activations.relu(x)
+        x = tf.nn.leaky_relu(x)
         x = self.conv3(x)
 
         x = tf.transpose(x, [0, 2, 1])
         x, perm = self.pool(x, sizes)
 
         x = self.linear1(x)
+        x = tf.nn.leaky_relu(x)
         x = self.linear2(x)
 
         return x

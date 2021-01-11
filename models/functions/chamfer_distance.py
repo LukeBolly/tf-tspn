@@ -60,6 +60,36 @@ def chamfer_distance(point_set_a, point_set_b, sizes, name=None):
                             tf.reduce_mean(input_tensor=minimum_square_distance_b_to_a, axis=-1))
         return setwise_distance
 
+# modification of standard chamfer distance, using huber loss instead of squared distance
+# same loss used in DSPN, not sure about TSPN
+def chamfer_distance_smoothed(point_set_a, point_set_b, sizes, name=None):
+    with tf.compat.v1.name_scope(name, "chamfer_distance_evaluate", [point_set_a, point_set_b]):
+        point_set_a = tf.convert_to_tensor(value=point_set_a)
+        point_set_b = tf.convert_to_tensor(value=point_set_b)
+
+        a = tf.expand_dims(point_set_a, axis=-2)
+        b = tf.expand_dims(point_set_b, axis=-3)
+
+        square_distances = tf.keras.losses.huber(a, b)
+
+        # remove the padded values before finding the min distance, otherwise the model can abuse the padding to
+        # achieve lower chamfer loss and not actually learn anything
+        # slice off the known extras from our tensor, otherwise raggedTensor throws an error if the final ragged
+        # tensor can be squeezed smaller than the initial size (ie. at least one row / column needs to be current size)
+        largest_unpadded_dim = max(sizes)
+        square_distances = square_distances[:, :largest_unpadded_dim, :largest_unpadded_dim]
+
+        row_sizes = tf.repeat(sizes, sizes)
+        square_distances = tf.RaggedTensor.from_tensor(square_distances, lengths=(sizes, row_sizes))
+
+        minimum_square_distance_a_to_b = tf.reduce_min(input_tensor=square_distances, axis=-1)
+        minimum_square_distance_b_to_a = tf.reduce_min(input_tensor=square_distances, axis=-2)
+
+        setwise_distance = (tf.reduce_mean(input_tensor=minimum_square_distance_a_to_b, axis=-1) +
+                            tf.reduce_mean(input_tensor=minimum_square_distance_b_to_a, axis=-1))
+        return setwise_distance
+
+
 if __name__ == '__main__':
     set_a = tf.constant([[[1], [2], [3], [4], [5], [6], [7], [8]], [[2], [3], [4], [5], [6], [7], [8], [9]]])
     set_b = tf.constant([[[8], [7], [6], [5], [4], [3], [2], [1]], [[8], [7], [6], [5], [4], [3], [2], [1]]])
