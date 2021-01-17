@@ -4,7 +4,7 @@ from tools import AttrDict, Every
 from datasets.mnist_set import MnistSet
 from models.functions.chamfer_distance import chamfer_distance, chamfer_distance_smoothed
 import datetime
-from visualisation import mnist_visualiser
+from visualisation import mnist_example
 import math
 from models.tspn import Tspn
 import argparse
@@ -29,6 +29,7 @@ def set_config():
     config.pad_value = -1
     config.tspn_learning_rate = 0.001
     config.prior_learning_rate = 0.1
+    config.set_pred_learning_rate = 0.001
     config.weight_decay = 0.0001
     config.log_every = 500
 
@@ -38,7 +39,7 @@ def set_config():
     return config
 
 
-class TspnMnist:
+class TspnAutoencoder:
     def __init__(self, args, config, dataset):
         self._c = config
         self._should_eval = Every(config.train_steps)
@@ -51,9 +52,11 @@ class TspnMnist:
                          self._c.trans_layers, self._c.trans_attn_size, self._c.trans_num_heads,
                          self.dataset.element_size, self._c.size_pred_width, self._c.pad_value,
                          self.dataset.max_num_elements)
+        self.tspn.compile()
 
         self.tspn_optimiser = tf.keras.optimizers.Adam(self._c.tspn_learning_rate)
         self.prior_optimiser = tf.keras.optimizers.Adam(self._c.prior_learning_rate)
+        self.size_pred_optimiser = tf.keras.optimizers.Adam(self._c.set_pred_learning_rate)
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         train_log_dir = 'logs/metrics/' + current_time
@@ -61,6 +64,7 @@ class TspnMnist:
         self.checkpoint_dir = checkpoint_folder + current_time + '/'
         self.summary_writer = tf.summary.create_file_writer(train_log_dir)
 
+        # if step is set, try to find the step in the latest training run folder and load weights from there
         if args.step is not None:
             self.tspn.built = True
 
@@ -80,10 +84,9 @@ class TspnMnist:
             else:
                 step_folder = [x for x in step_ckpnts if str(args.step) in x][0]
 
-            ckpnt_file = [f.path for f in os.scandir(step_folder) if '.data' in f.path][0]
-            self.tspn.load_weights(step_folder + '/')
+            self.tspn.load_weights(step_folder + '/').expect_partial()
 
-    def train(self):
+    def train_tspn(self):
         train_ds = self.dataset.get_train_set().batch(self._c.batch_size)
         val_ds = self.dataset.get_val_set().batch(self._c.batch_size)
 
@@ -107,30 +110,64 @@ class TspnMnist:
 
                 with self.summary_writer.as_default():
                     tf.summary.scalar('train/model loss', train_model_loss, step=step)
-                    for tf_var in self.tspn.trainable_weights:
-                        tf.summary.histogram(tf_var.name, tf_var.numpy(), step=step)
 
                 if self.should_log(step):
                     print('logging ' + str(step))
                     self.tspn.save_weights(self.checkpoint_dir + '/' + str(step) + '/')
 
+                    with self.summary_writer.as_default():
+                        for tf_var in self.tspn.trainable_weights:
+                            tf.summary.histogram(tf_var.name, tf_var.numpy(), step=step)
+
                     for images, sets, sizes, labels in val_ds.take(1):
                         val_prior_loss, val_model_loss, sampled_elements, pred_set = self.eval_tspn_step(sets, sizes)
                         with self.summary_writer.as_default():
-                            tf.summary.image("Training data", mnist_visualiser.plot_to_image(
-                                mnist_visualiser.set_to_plot(images, sets, sampled_elements, pred_set)), step=step)
+                            tf.summary.image("Training data", mnist_example.plot_to_image(
+                                mnist_example.set_to_plot(images, sets, sampled_elements, pred_set)), step=step)
 
             val_prior_loss_sum = 0
             val_model_loss_sum = 0
 
             for val_step, (images, sets, sizes, labels) in enumerate(val_ds):
                 val_prior_loss, val_model_loss, sampled_elements, pred_set = self.eval_tspn_step(sets, sizes)
-                val_prior_loss_sum = val_prior_loss_sum + val_prior_loss
-                val_model_loss_sum = val_model_loss_sum + val_model_loss
+                val_prior_loss_sum += val_prior_loss
+                val_model_loss_sum += val_model_loss
 
             with self.summary_writer.as_default():
                 tf.summary.scalar('val/prior loss', val_prior_loss_sum / val_step, step=step)
-                tf.summary.scalar('val/model loss', math.log10(val_model_loss_sum / val_step), step=step)
+                tf.summary.scalar('val/model loss', val_model_loss_sum / val_step, step=step)
+
+    def train_size_predictor(self):
+        train_ds = self.dataset.get_train_set().batch(self._c.batch_size)
+        val_ds = self.dataset.get_val_set().batch(self._c.batch_size)
+
+        step = 0
+        for epoch in range(self._c.num_epochs):
+            print('size predictor training epoch: ' + str(epoch))
+            for train_step, (images, sets, sizes, labels) in enumerate(train_ds):
+                train_model_loss = self.train_size_predictor_step(sets, sizes)
+                step += 1
+
+                with self.summary_writer.as_default():
+                    tf.summary.scalar('train/size predictor loss', train_model_loss, step=step)
+
+                if self.should_log(step):
+                    print('logging ' + str(step))
+                    self.tspn.save_weights(self.checkpoint_dir + '/' + str(step) + '/')
+
+            val_model_SE_sum = 0
+            val_count = 0
+
+            for val_step, (images, sets, sizes, labels) in enumerate(val_ds):
+                predicted_sizes, val_model_loss = self.eval_size_predictor_step(sets, sizes)
+                for i in range(len(predicted_sizes)):
+                    val_count += 1
+                    val_model_SE_sum += math.pow(predicted_sizes[i] - sizes[i], 2)
+
+            rmse = math.sqrt(val_model_SE_sum / val_count)
+
+            with self.summary_writer.as_default():
+                tf.summary.scalar('val/size predictor RMSE', rmse, step=step)
 
     def prior_loss(self, initial_set, sizes):
         sampled_set = self.tspn.sample_prior(sizes)
@@ -168,6 +205,7 @@ class TspnMnist:
 
         return pred_set, model_loss
 
+    # @tf.function
     def train_tspn_step(self, initial_set, sizes):
         sampled_set = self.tspn.sample_prior_batch(sizes)
 
@@ -184,29 +222,46 @@ class TspnMnist:
         pred_set, model_loss = self.tspn_loss(x, padded_samples, sizes)
         return prior_loss, model_loss, padded_samples, pred_set
 
-    def train_size_predictor_step(self, initial_set, sizes):
-        embedded = self.tspn.encode_set(initial_set, sizes)  # pooled: [batch_size, num_features]
+    def size_predictor_loss(self, embedded_sets, sizes):
+        pred_sizes = self.tspn.predict_size(embedded_sets)
+
+        one_hot_sizes = tf.one_hot(sizes - 1, self.max_set_size)    # decrement indices by 1 as not sets are size 0
+        size_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(one_hot_sizes, pred_sizes))
+        predicted_sizes = tf.cast(tf.argmax(pred_sizes, 1), tf.int32) + 1
+        return predicted_sizes, size_loss
+
+    # @tf.function
+    def train_size_predictor_step(self, initial_sets, sizes):
+        embedded_sets = self.tspn.encode_set(initial_sets, sizes)  # pooled: [batch_size, num_features]
 
         with tf.GradientTape() as size_tape:
-            set_sizes_pred = self.tspn.predict_size(embedded)
-
-            # rescale sizes between 0 and 1
-            scaled = [x / self.max_set_size for x in sizes]
-            size_loss = tf.keras.losses.mean_squared_error(scaled, set_sizes_pred)
+            set_sizes_pred, size_loss = self.size_predictor_loss(embedded_sets, sizes)
 
         size_trainables = self.tspn.get_size_predictor_weights()
         model_grads = size_tape.gradient(size_loss, size_trainables)
         self.tspn_optimiser.apply_gradients(zip(model_grads, size_trainables))
         return size_loss
 
+    def eval_size_predictor_step(self, initial_sets, sizes):
+        embedded_sets = self.tspn.encode_set(initial_sets, sizes)  # pooled: [batch_size, num_features]
+        set_sizes_pred, size_loss = self.size_predictor_loss(embedded_sets, sizes)
+
+        return set_sizes_pred, size_loss
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--step', type=int)
+    parser.add_argument('-s', '--step', type=int, help='load a specific step from the latest run. -1 to load last '
+                                                       'saved training step')
+    parser.add_argument('-p', '--predictor', action='store_true', help='train the size predictor using the existing '
+                                                                       'tspn model')
 
     args = parser.parse_args()
 
     config = set_config()
     dataset = MnistSet(config.train_split, config.pad_value, 20)
-    tspn = TspnMnist(args, config, dataset)
-    tspn.train()
+    tspn = TspnAutoencoder(args, config, dataset)
+
+    if args.predictor:
+        tspn.train_size_predictor()
+    else:
+        tspn.train_tspn()

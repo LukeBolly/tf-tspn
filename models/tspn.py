@@ -24,7 +24,7 @@ class Tspn(tf.keras.Model):
                                                      bias_initializer=tf.keras.initializers.constant(0.5),
                                                      use_bias=True)
 
-        self._size_predictor = SizePredictor(size_pred_width)
+        self._size_predictor = SizePredictor(size_pred_width, max_set_size)
 
     def call(self, initial_set, sampled_set, sizes):
         # encode the input set
@@ -56,7 +56,9 @@ class Tspn(tf.keras.Model):
         return self._encoder(initial_set, sizes)
 
     def predict_size(self, embedding):
-        return self._size_predictor(embedding)
+        sizes = self._size_predictor(embedding)
+        sizes = tf.keras.activations.softmax(sizes, -1)
+        return sizes
 
     def get_autoencoder_weights(self):
         return self._encoder.trainable_weights + \

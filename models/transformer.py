@@ -12,11 +12,11 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         self.depth = d_model // self.num_heads
 
-        self.wq = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform')
-        self.wk = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform')
-        self.wv = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform')
+        self.wq = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform', use_bias=False)
+        self.wk = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform', use_bias=False)
+        self.wv = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform', use_bias=False)
 
-        self.ff = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform')
+        self.ff = tf.keras.layers.Dense(d_model, kernel_initializer='glorot_uniform', use_bias=False)
 
     def split_heads(self, x, batch_size):
         """Split the last dimension into (num_heads, depth).
@@ -91,7 +91,8 @@ class Encoder(tf.keras.layers.Layer):
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Conv1D(d_model, 1, kernel_initializer='glorot_uniform', use_bias=True)
+        self.embedding = tf.keras.layers.Conv1D(d_model, 1, kernel_initializer='glorot_uniform', use_bias=True,
+                                                bias_initializer=tf.constant_initializer(0.1))
         self.enc_layers = [EncoderLayer(d_model, num_heads)
                            for _ in range(num_layers)]
 

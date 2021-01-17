@@ -76,7 +76,7 @@ def chamfer_distance_smoothed(point_set_a, point_set_b, sizes, name=None):
         # achieve lower chamfer loss and not actually learn anything
         # slice off the known extras from our tensor, otherwise raggedTensor throws an error if the final ragged
         # tensor can be squeezed smaller than the initial size (ie. at least one row / column needs to be current size)
-        largest_unpadded_dim = max(sizes)
+        largest_unpadded_dim = tf.reduce_max(sizes)
         square_distances = square_distances[:, :largest_unpadded_dim, :largest_unpadded_dim]
 
         row_sizes = tf.repeat(sizes, sizes)
