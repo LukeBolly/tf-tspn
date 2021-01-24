@@ -28,7 +28,7 @@ class AnimatedMnist:
                                           init_func=self.setup_plot, blit=True, save_count=self.total_frames)
 
     def initialise_dataset(self):
-        for images, sets, sizes, labels in self.mnist.get_train_set().batch(self.batch_size).skip(22).take(1):
+        for images, sets, sizes, labels in self.mnist.get_train_set().batch(self.batch_size).skip(29).take(1):
             self.sets = sets
             self.sizes = sizes
 
@@ -80,5 +80,5 @@ class AnimatedMnist:
 
 if __name__ == '__main__':
     a = AnimatedMnist()
-    # a.save()
+    a.save()
     plt.show()
