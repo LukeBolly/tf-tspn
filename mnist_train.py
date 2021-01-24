@@ -1,8 +1,7 @@
 import tensorflow as tf
-from models.size_predictor import SizePredictor
 from tools import AttrDict, Every
 from datasets.mnist_set import MnistSet
-from models.functions.chamfer_distance import chamfer_distance, chamfer_distance_smoothed
+from models.functions.chamfer_distance import chamfer_distance_smoothed
 import datetime
 from visualisation import mnist_example
 import math
