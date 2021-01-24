@@ -40,7 +40,7 @@ def set_config():
 
 
 class TspnAutoencoder:
-    def __init__(self, args, config, dataset):
+    def __init__(self, load_step, config, dataset):
         self._c = config
         self._should_eval = Every(config.train_steps)
         self.max_set_size = dataset.max_num_elements
@@ -65,7 +65,7 @@ class TspnAutoencoder:
         self.summary_writer = tf.summary.create_file_writer(train_log_dir)
 
         # if step is set, try to find the step in the latest training run folder and load weights from there
-        if args.step is not None:
+        if load_step is not None:
             self.tspn.built = True
 
             def extract_sortable_value(value):
@@ -78,11 +78,11 @@ class TspnAutoencoder:
 
             step_ckpnts = [f.path for f in os.scandir(latest_run) if f.is_dir()]
 
-            if args.step is -1:
+            if load_step is -1:
                 step_ckpnts = sorted(step_ckpnts, key=extract_sortable_value)
                 step_folder = step_ckpnts[-1]
             else:
-                step_folder = [x for x in step_ckpnts if str(args.step) in x][0]
+                step_folder = [x for x in step_ckpnts if str(load_step) in x][0]
 
             self.tspn.load_weights(step_folder + '/').expect_partial()
 
@@ -248,6 +248,7 @@ class TspnAutoencoder:
 
         return set_sizes_pred, size_loss
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--step', type=int, help='load a specific step from the latest run. -1 to load last '
@@ -259,7 +260,7 @@ if __name__ == '__main__':
 
     config = set_config()
     dataset = MnistSet(config.train_split, config.pad_value, 20)
-    tspn = TspnAutoencoder(args, config, dataset)
+    tspn = TspnAutoencoder(args.step, config, dataset)
 
     if args.predictor:
         tspn.train_size_predictor()
